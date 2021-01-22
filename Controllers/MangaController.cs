@@ -22,7 +22,7 @@ namespace MangaCompanion.Controllers
         [HttpGet]
         public async Task<IActionResult> Get()
         {
-            var mangas = await _service.ListarCapitulosManga();
+            var mangas = await _service.ListarMangas();
             return Ok(mangas);
         }
 

@@ -5,5 +5,7 @@ namespace MangaCompanion.Services
     public interface IMangaService
     {
         Task<object> ListarCapitulosManga();
+
+        Task<object> ListarMangas();
     }
 }

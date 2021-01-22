@@ -23,7 +23,7 @@ namespace MangaCompanion.Workers
             while (!stoppingToken.IsCancellationRequested)
             {
                 _logger.LogInformation($"Worker is running at: {DateTimeOffset.Now}");
-                await Task.Delay(1000, stoppingToken);
+                await Task.Delay(TimeSpan.FromSeconds(10), stoppingToken);
             }
         }
     }
