@@ -1,24 +1,30 @@
 ﻿using HtmlAgilityPack;
+using MangaCompanion.Models;
+using Microsoft.Extensions.Logging;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
 using System.Threading.Tasks;
-using System.IO;
-using System;
-using System.Text;
 
 namespace MangaCompanion.Services
 {
     public class MangaService : IMangaService
     {
-        const string url = "http://centraldemangas.online/titulos/9b0f585f_2f67_4995_86dd_f0903d5a452d";
-        const string urlLista = "http://centraldemangas.online/titulos";
+        const string url = "http://centraldemangas.online/titulos";
         const string defautlUrl = "http://centraldemangas.online";
 
-        public async Task<object> ListarCapitulosManga()
+        private readonly ILogger<MangaService> _logger;
+
+        public MangaService(ILogger<MangaService> logger)
+        {
+            _logger = logger;
+        }
+
+        public async Task<Manga> ListarCapitulosManga(Manga manga)
         {
             HttpClient httpClient = new HttpClient();
-            var html = await httpClient.GetStringAsync(url);
+            var html = await httpClient.GetStringAsync($"{defautlUrl}{manga.Url}");
 
             var htmlDocument = new HtmlDocument();
             htmlDocument.LoadHtml(html);
@@ -32,78 +38,74 @@ namespace MangaCompanion.Services
             var titulo = PegarTitulo(htmlDocument);
             var capa = PegarUrlImagem(htmlDocument);
 
-            return new { titulo, capa, capitulos };
+            manga.Capa = capa;
+            manga.Capitulos = capitulos;
+
+            return manga;
         }
 
-        public async Task<object> ListarMangas()
+        public async Task<IEnumerable<Manga>> ListarMangas()
         {
-            HttpClient httpClient = new HttpClient();
-            var html = await httpClient.GetStringAsync(urlLista);
-            List<object> x = new List<object>();
+            var listaContendoTodosMangas = new List<Manga>();
 
-            var htmlDocument = new HtmlDocument();
+            using HttpClient httpClient = new HttpClient();
+            var html = await httpClient.GetStringAsync(url);
+
+            HtmlDocument htmlDocument = new HtmlDocument();
             htmlDocument.LoadHtml(html);
 
-            var listaDeProximos = PegarElementoHtmlListaProximos(htmlDocument);
-            var proximos = ListarProximos(listaDeProximos);
-            var next = MontarListaDeProximos(proximos);
-            var list = PegarElementoHtmlListaDosMangas(htmlDocument);
-            var mangas = PegarDadosMangas(list);
+            var pageList = PegarListaProximos(htmlDocument);
 
-            foreach (var item in next)
+            foreach (var page in pageList)
             {
-                var htmlNovo = await httpClient.GetStringAsync(item);
-                var htmlDocumentNovo = new HtmlDocument();
-                htmlDocumentNovo.LoadHtml(htmlNovo);
-
-                var j = PegarElementoHtmlListaDosMangas(htmlDocumentNovo);
-                var dados = PegarDadosMangas(j);
-
-                x.AddRange(MontarObjetoManga(dados));
+                html = await httpClient.GetStringAsync(page);
+                htmlDocument.LoadHtml(html);
+                var dados = PegarElementoHtmlListaDosMangas(htmlDocument);
+                listaContendoTodosMangas.AddRange(dados);
             }
 
-            return new { x };
-        }
-
-        private IEnumerable<object> MontarObjetoManga(IEnumerable<HtmlNode> htmlNode)
-        {
-            List<object> list = new List<object>();
-
-            foreach (var d in htmlNode)
+            foreach (var manga in listaContendoTodosMangas)
             {
-                list.Add(new { d.Attributes[0].Value, texto = d.InnerHtml.Trim() });
+                try
+                {
+                    await ListarCapitulosManga(manga);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex.Message);
+                }
             }
-            return list;
+
+            return listaContendoTodosMangas;
         }
 
-        private HtmlNode PegarElementoHtmlListaProximos(HtmlDocument htmlDocument)
+        private IEnumerable<string> PegarListaProximos(HtmlDocument htmlDocument)
         {
-            return htmlDocument.DocumentNode.Descendants("div").Where(node => node.GetAttributeValue("class", "").Equals("column center aligned")).FirstOrDefault();
-        }
+            var elementoDiv = htmlDocument.DocumentNode.Descendants("div").Where(node => node.GetAttributeValue("class", "").Equals("column center aligned")).FirstOrDefault();
 
-        private HtmlNode PegarElementoHtmlListaDosMangas(HtmlDocument htmlDocument)
-        {
-            return htmlDocument.DocumentNode.Descendants("div").Where(node => node.GetAttributeValue("class", "").Equals("ui divided big relaxed list")).FirstOrDefault();
-        }
+            var nodes = elementoDiv.Descendants("a").ToList();
 
-        private IEnumerable<HtmlNode> PegarDadosMangas(HtmlNode node)
-        {
-            return node.Descendants("a").Where(node => node.Attributes.Contains("href") && node.FirstChild.Name != "img").ToList();
-        }
-
-        private IEnumerable<HtmlNode> ListarProximos(HtmlNode node)
-        {
-            return node.Descendants("a").ToList();
-        }
-
-        private IEnumerable<string> MontarListaDeProximos(IEnumerable<HtmlNode> nodes)
-        {
             List<string> listUrlProximasPaginas = new List<string>();
             foreach (var item in nodes)
             {
                 listUrlProximasPaginas.Add($"{defautlUrl}{item.GetAttributeValue("href", "")}");
             }
             return listUrlProximasPaginas;
+        }
+
+        private IEnumerable<Manga> PegarElementoHtmlListaDosMangas(HtmlDocument htmlDocument)
+        {
+            List<Manga> list = new List<Manga>();
+
+            var node = htmlDocument.DocumentNode.Descendants("div").Where(node => node.GetAttributeValue("class", "").Equals("ui divided big relaxed list")).FirstOrDefault();
+
+            var itens = node.Descendants("a").Where(node => node.Attributes.Contains("href") && node.FirstChild.Name != "img").ToList();
+
+            foreach (var d in itens)
+            {
+                list.Add(new Manga { Titulo = d.InnerHtml.Trim(), Url = d.Attributes[0].Value });
+            }
+            return list;
         }
 
         private string PegarTitulo(HtmlDocument htmlDocument)
@@ -120,7 +122,11 @@ namespace MangaCompanion.Services
         {
             return node.Descendants("a").ToList();
         }
-
+        /// <summary>
+        /// As datas de lançamento estão dentro de tags <small>
+        /// </summary>
+        /// <param name="node"></param>
+        /// <returns></returns>
         private IEnumerable<HtmlNode> ListarDatas(HtmlNode node)
         {
             return node.Descendants("small").ToList();

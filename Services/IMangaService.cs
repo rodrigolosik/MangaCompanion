@@ -1,11 +1,13 @@
-﻿using System.Threading.Tasks;
+﻿using MangaCompanion.Models;
+using System.Collections.Generic;
+using System.Threading.Tasks;
 
 namespace MangaCompanion.Services
 {
     public interface IMangaService
     {
-        Task<object> ListarCapitulosManga();
+        Task<Manga> ListarCapitulosManga(Manga manga);
 
-        Task<object> ListarMangas();
+        Task<IEnumerable<Manga>> ListarMangas();
     }
 }
